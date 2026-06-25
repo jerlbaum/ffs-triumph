@@ -13,6 +13,16 @@ _BLOCK_DIVS = {
 # Inline semantic wrappers rendered as <span class="<node>">.
 _INLINE_SPANS = {"variable"}
 
+# Hazard triangle (black triangle, white "!") for Warning/Caution/Danger bars.
+_SAFETY_ICON = (
+    '<svg class="safety-icon" width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">'
+    '<path d="M12 2L23 21H1L12 2Z" fill="#111"/>'
+    '<rect x="11" y="8.5" width="2" height="6.5" fill="#fff"/>'
+    '<rect x="11" y="16.5" width="2" height="2" fill="#fff"/>'
+    "</svg>"
+)
+_HAZARD = {"danger", "warning", "caution"}
+
 
 def _safe(node_type):
     """Map a node type to a python-identifier suffix for handler lookup."""
@@ -33,6 +43,7 @@ class HtmlRenderer:
         if not inline_images and image_out_dir:
             image_out_dir.mkdir(parents=True, exist_ok=True)
         self._written = set()
+        self._toc_titles = None  # lazy id -> title map for resolving bare links
 
     # public ---------------------------------------------------------------
 
@@ -144,6 +155,9 @@ class HtmlRenderer:
             cls += " tc-" + html.escape(str(node["type"]))
         return f'<div class="{cls}">{self._children_html(node, level)}</div>'
 
+    def _n_table_title(self, node, level):
+        return f'<div class="table-title">{self._children_html(node, level)}</div>'
+
     def _n_table(self, node, level):
         colgroup = ""
         widths = node.get("widths")
@@ -187,19 +201,55 @@ class HtmlRenderer:
     # safety callouts
     def _n_safety(self, node, level):
         sev = str(node.get("severity") or "note").lower()
-        label = sev.upper()
+        label = sev.capitalize()
+        icon = _SAFETY_ICON if sev in _HAZARD else ""
         return (
             f'<div class="safety severity-{html.escape(sev)}">'
-            f'<div class="safety-label">{html.escape(label)}</div>'
+            f'<div class="safety-bar">{icon}'
+            f'<span class="safety-label">{html.escape(label)}</span></div>'
             f'<div class="safety-body">{self._children_html(node, level)}</div>'
             f"</div>"
         )
 
     # cross references
+    def _topic_title(self, target):
+        """Resolve a topic id to its toc title (for links with no text body)."""
+        if not target:
+            return ""
+        if self._toc_titles is None:
+            self._toc_titles = {}
+            get_root = getattr(self.client, "get_root", None)
+            try:
+                root = get_root() if get_root else {}
+            except Exception:  # noqa: BLE001
+                root = {}
+
+            def walk(nodes):
+                for n in nodes:
+                    self._toc_titles[str(n.get("id"))] = n.get("title", "")
+                    walk(n.get("children") or [])
+
+            walk((root or {}).get("toc", []))
+        return self._toc_titles.get(str(target), "")
+
     def _n_link(self, node, level):
         target = node.get("target-base-id") or node.get("target-id")
         href = f"#topic-{html.escape(str(target))}" if target else "#"
-        return f'<a class="xref" href="{href}">{self._children_html(node, level)}</a>'
+        inner = self._children_html(node, level)
+        if not inner.strip():  # bare link (common in linklist): use the target's title
+            title = self._topic_title(node.get("target-base-id"))
+            inner = html.escape(title) if title else "Related topic"
+        return f'<a class="xref" href="{href}">{inner}</a>'
+
+    def _n_linklist(self, node, level):
+        items = "".join(
+            f"<li>{self._render_node(c, level)}</li>"
+            for c in (node.get("body") or []) if isinstance(c, dict)
+        )
+        return f'<ul class="linklist">{items}</ul>'
+
+    def _n_br(self, node, level):
+        return "<br>"
 
     # images
     def _n_image(self, node, level):

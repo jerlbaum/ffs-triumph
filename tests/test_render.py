@@ -13,6 +13,9 @@ class StubClient:
     def get_image(self, href):
         return self.SVG
 
+    def get_root(self):
+        return {"toc": [{"id": "123", "title": "Fork Removal", "children": []}]}
+
     def log(self, level, *args):
         pass
 
@@ -59,12 +62,29 @@ def test_table_widths_and_colspan():
     assert r.unhandled == {}
 
 
+def test_table_title_handled():
+    content = [{"node": "table-title", "body": [{"node": "text", "body": "Torque values"}]}]
+    html, r = render(content)
+    assert html == '<div class="table-title">Torque values</div>'
+    assert r.unhandled == {}
+
+
 def test_safety_severity():
     content = [{"node": "safety", "severity": "warning",
                 "body": [{"node": "text", "body": "Careful"}]}]
     html, _ = render(content)
     assert 'class="safety severity-warning"' in html
-    assert ">WARNING<" in html and "Careful" in html
+    assert '<div class="safety-bar">' in html and "svg" in html  # colored bar + icon
+    assert ">Warning</span>" in html and "Careful" in html
+
+
+def test_note_severity_has_no_icon():
+    content = [{"node": "safety", "severity": "note",
+                "body": [{"node": "text", "body": "FYI"}]}]
+    html, _ = render(content)
+    assert 'class="safety severity-note"' in html
+    assert "svg" not in html  # notes are not hazards -> no triangle
+    assert ">Note</span>" in html
 
 
 def test_link_uses_anchor():
@@ -72,6 +92,26 @@ def test_link_uses_anchor():
                 "body": [{"node": "text", "body": "see"}]}]
     html, _ = render(content)
     assert '<a class="xref" href="#topic-999">see</a>' == html
+
+
+def test_br_handled():
+    html, r = render([{"node": "br", "body": []}])
+    assert html == "<br>"
+    assert r.unhandled == {}
+
+
+def test_linklist_resolves_bare_link_titles():
+    content = [{"node": "linklist", "body": [
+        {"node": "link", "target-base-id": "123", "body": []},
+    ]}]
+    html, r = render(content)
+    assert html == '<ul class="linklist"><li><a class="xref" href="#topic-123">Fork Removal</a></li></ul>'
+    assert r.unhandled == {}
+
+
+def test_bare_link_without_title_falls_back():
+    html, _ = render([{"node": "link", "target-base-id": "999", "body": []}])
+    assert html == '<a class="xref" href="#topic-999">Related topic</a>'
 
 
 def test_inline_emphasis_and_scripts():

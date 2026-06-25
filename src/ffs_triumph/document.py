@@ -34,6 +34,9 @@ table.tbl th, table.tbl td { border: 0.5pt solid #999; padding: 3pt 5pt;
 table.tbl thead { display: table-header-group; }
 table.tbl th { background: #eef1f4; }
 .table-container { break-inside: avoid; margin: 0.6em 0; }
+.table-title { font-family: "Avenir Next", "Avenir", "Futura", "Helvetica Neue",
+            Arial, sans-serif; font-weight: 700; margin: 0.6em 0 0.2em;
+            break-after: avoid; }
 
 /* figures */
 .image-container, figure.image { break-inside: avoid; margin: 0.6em 0; text-align: center; }
@@ -43,16 +46,19 @@ table.tbl th { background: #eef1f4; }
 .figure-img { max-width: 100%; max-height: 215mm; height: auto; }
 .img-missing { color: #b00; font-style: italic; }
 
-/* safety callouts */
-.safety { break-inside: avoid; border: 1pt solid; border-radius: 4px;
-          padding: 6pt 9pt; margin: 0.6em 0; }
-.safety-label { font-weight: 700; font-size: 9pt; letter-spacing: 0.05em;
-          margin-bottom: 3pt; }
-.severity-warning, .severity-caution { border-color: #c47f00; background: #fff7e6; }
-.severity-warning .safety-label, .severity-caution .safety-label { color: #9a5b00; }
-.severity-danger { border-color: #b00; background: #fdecec; }
-.severity-danger .safety-label { color: #900; }
-.severity-note, .safety { border-color: #999; background: #f5f7f9; }
+/* safety callouts — colored title bar + hazard icon over a bordered body,
+   matching the official Triumph handbook style */
+.safety { break-inside: avoid; border: 0.75pt solid #222; margin: 0.7em 0; }
+.safety-bar { display: flex; align-items: center; justify-content: center; gap: 5pt;
+       padding: 3pt 6pt; border-bottom: 0.75pt solid #222;
+       font-family: "Avenir Next", "Avenir", "Futura", "Helvetica Neue", Arial, sans-serif;
+       font-weight: 700; font-size: 11.5pt; color: #111; }
+.safety-icon { display: inline-block; vertical-align: middle; }
+.safety-body { padding: 6pt 9pt; background: #fff; }
+.severity-warning .safety-bar { background: #e0913e; }  /* orange */
+.severity-caution .safety-bar { background: #f5c518; }  /* yellow */
+.severity-danger  .safety-bar { background: #d8362a; color: #fff; }  /* red */
+.severity-note    .safety-bar { background: #e9edf1; }  /* grey, no icon */
 
 /* lists */
 ol, ul { margin: 0.35em 0; padding-left: 1.6em; }
@@ -60,6 +66,9 @@ li { margin: 0.15em 0; }
 li > p { margin: 0; }              /* keep marker aligned with first line */
 li > p ~ p { margin-top: 0.3em; }  /* but space multiple paragraphs in one item */
 ul.ul-dash { list-style-type: "\\2013\\00a0\\00a0"; }
+ul.linklist { list-style: none; padding-left: 1em; }
+ul.linklist > li { margin: 0.1em 0; }
+ul.linklist a.xref::before { content: "\\2192\\00a0"; color: #888; }  /* arrow */
 
 /* table of contents */
 .toc { break-after: page; }
