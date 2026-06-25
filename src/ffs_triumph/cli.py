@@ -18,7 +18,7 @@ from .config import (
     load_config_file,
     save_config_file,
 )
-from .document import assemble_document
+from .document import assemble_document, manual_title
 from .pdf import install_browser, render_pdf
 from .render import HtmlRenderer
 
@@ -225,7 +225,7 @@ def cmd_build(args):
 
     if args.html_only:
         return
-    doc_title = client.get_root().get("title", "Service Manual")
+    doc_title = manual_title(client)
     pdf_path = out_dir / f"{cfg.slug()}.pdf"
     render_pdf(html_path, pdf_path, doc_title)
     print(f"Wrote {pdf_path}")

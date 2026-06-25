@@ -102,6 +102,22 @@ class TriumphClient:
         r.raise_for_status()
         return r.json()
 
+    def get_product_image(self) -> tuple[bytes | None, str]:
+        """Fetch the motorcycle cover image, if the config has its URL.
+
+        Returns (bytes, content_type), or (None, "") on any failure.
+        """
+        url = self.config.product_image_url if self.config else None
+        if not url:
+            return None, ""
+        try:
+            r = self.session.get(url)
+            r.raise_for_status()
+        except requests.RequestException as err:
+            self.log(0, f"WARNING: cover image fetch failed: {err}")
+            return None, ""
+        return r.content, r.headers.get("content-type", "image/png")
+
     # -- raw document/topic/image fetches ----------------------------------
 
     def _ctx(self) -> ManualConfig:

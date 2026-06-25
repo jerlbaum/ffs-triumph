@@ -1,16 +1,22 @@
 """Assemble rendered topics into one paginated, print-ready HTML document."""
 
+import base64
 import html
 
 PRINT_CSS = """
 @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
 * { box-sizing: border-box; }
 body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 10.5pt;
-       line-height: 1.4; color: #111; }
-h1, h2, h3, h4, h5, h6 { font-family: Arial, sans-serif; color: #15171a;
-       break-after: avoid; margin: 0.8em 0 0.3em; }
-h1 { font-size: 20pt; } h2 { font-size: 15pt; } h3 { font-size: 12.5pt; }
-p { margin: 0.35em 0; }
+       line-height: 1.4; color: #111; hyphens: auto; }
+/* Geometric sans to echo Triumph's brand font (Brokman); macOS Avenir/Futura
+   render closest, with graceful web-safe fallbacks elsewhere. */
+h1, h2, h3, h4, h5, h6 { font-family: "Avenir Next", "Avenir", "Futura",
+       "Helvetica Neue", Arial, sans-serif; color: #15171a;
+       font-weight: 700; break-after: avoid; margin: 0.8em 0 0.3em; }
+h1 { font-size: 20pt; text-transform: uppercase; letter-spacing: 0.04em; }
+h2 { font-size: 15pt; } h3 { font-size: 12.5pt; }
+p { margin: 0.35em 0; text-align: justify; }
+td p, th p, li p { text-align: left; }  /* justify reads badly in cells/list items */
 strong { font-weight: 700; }
 a.xref { color: #0b5394; text-decoration: none; }
 .variable { font-family: "SFMono-Regular", Menlo, monospace; }
@@ -60,10 +66,35 @@ ul.ul-dash { list-style-type: "\\2013\\00a0\\00a0"; }
 .toc ul { list-style: none; padding-left: 1.1em; }
 .toc a { text-decoration: none; color: #111; }
 .toc .toc-leaf { color: #333; }
-.titlepage { text-align: center; padding-top: 28%; break-after: page; }
-.titlepage h1 { font-size: 30pt; }
-.titlepage .sub { font-size: 13pt; color: #555; margin-top: 0.5em; }
+.titlepage { text-align: center; padding-top: 14%; break-after: page; }
+.titlepage h1 { font-size: 30pt; text-transform: none; letter-spacing: normal; }
+.titlepage .cover-img { display: block; margin: 2em auto 0;
+       max-width: 80%; max-height: 110mm; height: auto; }
+.titlepage .sub { font-size: 13pt; color: #555; margin-top: 2em; }
 """
+
+
+def display_title(root_title, model_year):
+    """Weave the vehicle year into the document title.
+
+    "Service Manual - Speed Triple 1200 RS" + "2022"
+      -> "Service Manual - 2022 Speed Triple 1200 RS"
+    """
+    if not model_year:
+        return root_title
+    if str(model_year) in root_title:
+        return root_title  # already present
+    if " - " in root_title:
+        head, sep, tail = root_title.partition(" - ")
+        return f"{head}{sep}{model_year} {tail}"
+    return f"{model_year} {root_title}"
+
+
+def manual_title(client):
+    """The document title shown on the cover and running header (incl. year)."""
+    root_title = client.get_root().get("title", "Service Manual")
+    year = client.config.model_year if client.config else None
+    return display_title(root_title, year)
 
 
 def build_toc_html(client, start_topic=None):
@@ -94,8 +125,7 @@ def build_toc_html(client, start_topic=None):
 def assemble_document(client, renderer, start_topic=None, limit=None,
                       title="Service Manual"):
     """Crawl the toc, render every leaf, and return (html_string, leaf_count)."""
-    root = client.get_root()
-    doc_title = html.escape(root.get("title", title))
+    doc_title = html.escape(manual_title(client))
 
     body_parts = []
     leaf_count = 0
@@ -130,8 +160,13 @@ def assemble_document(client, renderer, start_topic=None, limit=None,
         if limit and leaf_count >= limit:
             break
 
+    cover = ""
+    img_bytes, content_type = client.get_product_image()
+    if img_bytes:
+        b64 = base64.b64encode(img_bytes).decode("ascii")
+        cover = f'<img class="cover-img" alt="" src="data:{content_type};base64,{b64}">'
     titlepage = (
-        f'<div class="titlepage"><h1>{doc_title}</h1>'
+        f'<div class="titlepage"><h1>{doc_title}</h1>{cover}'
         f'<div class="sub">Offline edition &middot; generated for personal use</div></div>'
     )
     toc_html = (f'<div class="toc"><h1>Table of Contents</h1>'

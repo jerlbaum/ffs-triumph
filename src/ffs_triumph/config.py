@@ -31,6 +31,8 @@ class ManualConfig:
     model_name: str | None = None
     model_year: str | None = None
     vin: str | None = None
+    # Optional motorcycle image (PNG) shown on the PDF cover.
+    product_image_url: str | None = None
 
     @classmethod
     def from_product(cls, product: dict, language: str = DEFAULT_LANGUAGE,
@@ -52,11 +54,14 @@ class ManualConfig:
             model_name=product.get("modelName"),
             model_year=str(product.get("modelYear", "")) or None,
             vin=product.get("serialNumber"),
+            product_image_url=product.get("productImageUrl"),
         )
 
     def slug(self) -> str:
-        """A filesystem-safe base name for output files."""
+        """A filesystem-safe base name for output files (includes the year)."""
         base = self.model_name or "triumph service manual"
+        if self.model_year and str(self.model_year) not in base:
+            base = f"{self.model_year} {base}"
         out = "".join(c if c.isalnum() else "_" for c in base.lower())
         while "__" in out:
             out = out.replace("__", "_")
