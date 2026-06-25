@@ -31,8 +31,13 @@ def render_pdf(html_path: Path, pdf_path: Path, doc_title: str):
         sys.exit(_NO_PLAYWRIGHT)
 
     footer = (
-        '<div style="font-size:8px; width:100%; text-align:center; color:#666;">'
-        'Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>'
+        '<div style="font-size:7px; width:100%; text-align:center; color:#888; '
+        'line-height:1.5; font-family:Arial, sans-serif; padding:0 12mm;">'
+        '<div>Created by the Full-manual Fetcher &amp; Stitcher. For more information '
+        'about this free tool, go to https://github.com/jerlbaum/ffs-triumph</div>'
+        '<div>Page <span class="pageNumber"></span> of '
+        '<span class="totalPages"></span></div>'
+        '</div>'
     )
     header = (
         '<div style="font-size:8px; width:100%; text-align:center; color:#999;">'
@@ -52,7 +57,11 @@ def render_pdf(html_path: Path, pdf_path: Path, doc_title: str):
                 display_header_footer=True,
                 header_template=header,
                 footer_template=footer,
-                margin={"top": "22mm", "bottom": "20mm", "left": "16mm", "right": "16mm"},
+                margin={"top": "22mm", "bottom": "24mm", "left": "16mm", "right": "16mm"},
+                # Build a tagged PDF with a heading-based outline so viewers
+                # (e.g. macOS Preview) show a table of contents in the sidebar.
+                tagged=True,
+                outline=True,
             )
             browser.close()
     except Exception as err:  # most commonly: Chromium not installed
