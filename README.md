@@ -19,13 +19,13 @@ contents, page numbers, and proper page breaks.
 
 ## Motivation
 
+_HAVE YOU EVER TRIED TO USE A **COMPUTER** WHILE WEARING **OILY GLOVES?**_ 
+
 I've owned a lot of motorcycles. I've even owned Triumph motorcycles before. Every time I buy a new motorcycle, the first thing I do (right after making the _"vroom-vroom"_ sounds in my garage) is to **BUY A PDF OF THE SERVICE MANUAL.**
 
 I was *shocked* that there was no PDF available from Triumph. I'm sure it was just an oversight on your part. I was perfectly willing to pay for it. I can't imagine Triumph would make a crippled product on purpose. Especially not to make a sad US$8.33 per month, at the cost of alienating your most enthusiastic customers. That would be crazy.
 
 Anyway: Here you go. I've fixed the gaps in your offering. Any subscriber to the [Triumph Technical Information](https://triumphtechnicalinformation.com) site can now make a nice printed paper copy of whatever bit they need. You're welcome, Triumph! :beer:
-
-_And, seriously — HAVE YOU EVER TRIED TO USE A **COMPUTER** WHILE WEARING **OILY GLOVES?**_
 
 
 ## Install
@@ -111,6 +111,10 @@ vin = client.subscribed_vins()[0]
 client.config = ManualConfig.from_product(client.product_search(vin), root_id="<doc id>")
 root = client.get_root()          # the manual's table-of-contents tree
 ```
+
+## Changelog
+
+See [HISTORY.md](HISTORY.md).
 
 ## License
 
