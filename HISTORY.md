@@ -2,6 +2,16 @@
 
 All notable changes to **ffs-triumph** (FFS — Full-manual Fetcher & Stitcher).
 
+## 0.2.0 — 2026-06-30
+
+- Retry on HTTP 429 (Too Many Requests) with exponential backoff, so large
+  manual downloads survive the API's rate limiting instead of aborting.
+- Honor the server's `Retry-After` header (seconds or HTTP-date) when present,
+  waiting exactly as long as asked rather than guessing.
+- Route all document, image, and discovery requests through the shared
+  backoff/retry helper for consistent handling.
+- Add offline unit tests for the retry logic and `Retry-After` parsing.
+
 ## 0.1.4 — 2026-06-25
 
 - Render more of the content vocabulary found across Triumph documents:

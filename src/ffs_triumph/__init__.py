@@ -4,7 +4,7 @@ Turn a Triumph Technical Information service manual (a JavaScript SPA) into a
 single, self-contained, paginated PDF for offline viewing and printing.
 """
 
-__version__ = "0.1.4"
+__version__ = "0.2.0"
 
 from .client import LoginError, TriumphClient
 from .config import ManualConfig
