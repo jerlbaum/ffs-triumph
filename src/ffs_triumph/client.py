@@ -65,8 +65,7 @@ class TriumphClient:
     def auth(self) -> dict:
         """Fetch (and memoize) the /auth payload (account, subscriptions, prefs)."""
         if self._auth is None:
-            r = self.session.get(f"{self.api_base}/auth")
-            r.raise_for_status()
+            r = self._get_with_backoff_retry(f"{self.api_base}/auth")
             self._auth = r.json()
         return self._auth
 
@@ -95,14 +94,12 @@ class TriumphClient:
 
     def product_search(self, vin: str) -> dict:
         """Look up a VIN's product record (model code/year, serial, engine, market)."""
-        r = self.session.get(f"{self.api_base}/products/search/{vin}")
-        r.raise_for_status()
+        r = self._get_with_backoff_retry(f"{self.api_base}/products/search/{vin}")
         return r.json()
 
     def list_documents(self, product_context: dict) -> list[dict]:
         """List documents available for a product context."""
-        r = self.session.get(f"{self.api_base}/documents?{urlencode(product_context)}")
-        r.raise_for_status()
+        r = self._get_with_backoff_retry(f"{self.api_base}/documents?{urlencode(product_context)}")
         return r.json()
 
     def get_product_image(self) -> tuple[bytes | None, str]:
@@ -114,9 +111,8 @@ class TriumphClient:
         if not url:
             return None, ""
         try:
-            r = self.session.get(url)
-            r.raise_for_status()
-        except requests.RequestException as err:
+            r = self._get_with_backoff_retry(url)
+        except (requests.RequestException, RequestRetryFailure) as err:
             self.log(0, f"WARNING: cover image fetch failed: {err}")
             return None, ""
         return r.content, r.headers.get("content-type", "image/png")
@@ -135,7 +131,7 @@ class TriumphClient:
         Args:
             url: Passed to requests.get()
             params: Passed to requests.get(). Defaults to None.
-            tries: Number of retries before giving up. Defaults to 4.
+            retries: Number of retries before giving up. Defaults to 4.
             backoff_base: Seconds to backoff**N, where N is the number of the retry. Defaults to 3.
             **kwargs: Passed to requests.get()
             
@@ -173,7 +169,7 @@ class TriumphClient:
                 if status_code != 429:
                     # Something else. Reraise
                     raise
-                self.log(0, "WARNING: 429 Client Error (Too Many Requests).")                
+                self.log(0, "WARNING: 429 Client Error (Too Many Requests).")
             else:
                 # Successful request
                 break
@@ -189,8 +185,7 @@ class TriumphClient:
         """Fetch (and memoize) the root document, which carries the toc tree."""
         if self._root is None:
             cfg = self._ctx()
-            resp = self.session.get(f"{self.api_base}/documents/{cfg.root_id}")
-            resp.raise_for_status()
+            resp = self._get_with_backoff_retry(f"{self.api_base}/documents/{cfg.root_id}")
             self._root = resp.json()
             if self._root.get("language") != cfg.language:
                 self.log(0, f"WARNING: root language is {self._root.get('language')!r}, "
