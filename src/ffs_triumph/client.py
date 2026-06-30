@@ -3,6 +3,8 @@
 import json
 import sys
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -18,6 +20,28 @@ class LoginError(RuntimeError):
     
 class RequestRetryFailure(RuntimeError):
     """Out of retries. Giving up."""
+
+
+def _parse_retry_after(value):
+    """Parse a Retry-After header into seconds (float), or None if absent/unparseable.
+
+    Supports both RFC 7231 forms: an integer number of seconds, or an HTTP-date.
+    Past/negative dates clamp to 0.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
 
 
 class TriumphClient:
@@ -161,6 +185,7 @@ class TriumphClient:
                 
             time.sleep(sleep_time)
             
+            retry_after = None
             try:
                 resp = self.session.get(url, params=params, **kwargs)
                 resp.raise_for_status()
@@ -169,14 +194,20 @@ class TriumphClient:
                 if status_code != 429:
                     # Something else. Reraise
                     raise
-                self.log(0, "WARNING: 429 Client Error (Too Many Requests).")
+                retry_after = _parse_retry_after(e.response.headers.get("Retry-After"))
+                if retry_after is not None:
+                    self.log(0, f"WARNING: 429 Client Error (Too Many Requests). "
+                                f"Server asked to wait {retry_after} seconds.")
+                else:
+                    self.log(0, "WARNING: 429 Client Error (Too Many Requests).")
             else:
                 # Successful request
                 break
             
-            # Back off and (maybe) try again
+            # Back off and (maybe) try again. Honor Retry-After when the server
+            # sent it; otherwise fall back to the exponential schedule.
             retry_count += 1
-            sleep_time = backoff_base**retry_count
+            sleep_time = retry_after if retry_after is not None else backoff_base**retry_count
                 
         return resp
 
