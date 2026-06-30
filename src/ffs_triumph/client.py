@@ -166,7 +166,7 @@ class TriumphClient:
             time.sleep(sleep_time)
             
             try:
-                resp = self.session.get(url)
+                resp = self.session.get(url, params=params, **kwargs)
                 resp.raise_for_status()
             except requests.exceptions.HTTPError as e:
                 status_code = e.response.status_code
