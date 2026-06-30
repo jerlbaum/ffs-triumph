@@ -3,6 +3,8 @@
 import json
 import sys
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -15,6 +17,31 @@ REQUEST_DELAY = 0.15  # seconds, polite pause between network requests
 
 class LoginError(RuntimeError):
     """Raised when authentication fails."""
+    
+class RequestRetryFailure(RuntimeError):
+    """Out of retries. Giving up."""
+
+
+def _parse_retry_after(value):
+    """Parse a Retry-After header into seconds (float), or None if absent/unparseable.
+
+    Supports both RFC 7231 forms: an integer number of seconds, or an HTTP-date.
+    Past/negative dates clamp to 0.
+    """
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
 
 
 class TriumphClient:
@@ -62,8 +89,7 @@ class TriumphClient:
     def auth(self) -> dict:
         """Fetch (and memoize) the /auth payload (account, subscriptions, prefs)."""
         if self._auth is None:
-            r = self.session.get(f"{self.api_base}/auth")
-            r.raise_for_status()
+            r = self._get_with_backoff_retry(f"{self.api_base}/auth")
             self._auth = r.json()
         return self._auth
 
@@ -92,14 +118,12 @@ class TriumphClient:
 
     def product_search(self, vin: str) -> dict:
         """Look up a VIN's product record (model code/year, serial, engine, market)."""
-        r = self.session.get(f"{self.api_base}/products/search/{vin}")
-        r.raise_for_status()
+        r = self._get_with_backoff_retry(f"{self.api_base}/products/search/{vin}")
         return r.json()
 
     def list_documents(self, product_context: dict) -> list[dict]:
         """List documents available for a product context."""
-        r = self.session.get(f"{self.api_base}/documents?{urlencode(product_context)}")
-        r.raise_for_status()
+        r = self._get_with_backoff_retry(f"{self.api_base}/documents?{urlencode(product_context)}")
         return r.json()
 
     def get_product_image(self) -> tuple[bytes | None, str]:
@@ -111,9 +135,8 @@ class TriumphClient:
         if not url:
             return None, ""
         try:
-            r = self.session.get(url)
-            r.raise_for_status()
-        except requests.RequestException as err:
+            r = self._get_with_backoff_retry(url)
+        except (requests.RequestException, RequestRetryFailure) as err:
             self.log(0, f"WARNING: cover image fetch failed: {err}")
             return None, ""
         return r.content, r.headers.get("content-type", "image/png")
@@ -124,13 +147,76 @@ class TriumphClient:
         if self.config is None or not self.config.root_id:
             raise RuntimeError("No manual selected (ManualConfig.root_id is unset).")
         return self.config
+    
+    def _get_with_backoff_retry(self, url, params=None, retries=4, backoff_base=3, **kwargs):
+        """
+        Do a self-session.get(), and retry N times with an exponential backoff between failures.
+
+        Args:
+            url: Passed to requests.get()
+            params: Passed to requests.get(). Defaults to None.
+            retries: Number of retries before giving up. Defaults to 4.
+            backoff_base: Seconds to backoff**N, where N is the number of the retry. Defaults to 3.
+            **kwargs: Passed to requests.get()
+            
+        NOTES:
+        The backoff (sleep) time is calculated as follows (for example), given parameters:
+        
+        - REQUEST_DELAY: 0.15
+        - retries: 4
+        - backoff_base: 3
+        
+        Try #0: sleep_time 0.15 seconds [Use REQUEST_DELAY: 0.15 sec]
+        Try #1: sleep_time 3 seconds    [backoff_base**retry N: 3**1=3 sec]
+        Try #2: sleep_time 9 seconds    [backoff_base**retry N: 3**2=9 sec]
+        Try #3: sleep_time 27 seconds   [backoff_base**retry N: 3**3=27 sec]
+        Try #4: sleep_time 81 seconds   [backoff_base**retry N: 3**4=81 sec]
+        """
+        self.log(2, f"Getting URL: {url}")
+        
+        retry_count = 0
+        sleep_time = REQUEST_DELAY
+        while True:
+            if retry_count>retries:
+                raise RequestRetryFailure(f'Unable to retrieve URL after retrying {retries} times: {url}')
+
+            if retry_count:
+                self.log(0, f"Sleeping {sleep_time} seconds and retrying ({retry_count}/{retries})")
+                
+            time.sleep(sleep_time)
+            
+            retry_after = None
+            try:
+                resp = self.session.get(url, params=params, **kwargs)
+                resp.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code
+                if status_code != 429:
+                    # Something else. Reraise
+                    raise
+                retry_after = _parse_retry_after(e.response.headers.get("Retry-After"))
+                if retry_after is not None:
+                    self.log(0, f"WARNING: 429 Client Error (Too Many Requests). "
+                                f"Server asked to wait {retry_after} seconds.")
+                else:
+                    self.log(0, "WARNING: 429 Client Error (Too Many Requests).")
+            else:
+                # Successful request
+                break
+            
+            # Back off and (maybe) try again. Honor Retry-After when the server
+            # sent it; otherwise fall back to the exponential schedule.
+            retry_count += 1
+            sleep_time = retry_after if retry_after is not None else backoff_base**retry_count
+                
+        return resp
+
 
     def get_root(self):
         """Fetch (and memoize) the root document, which carries the toc tree."""
         if self._root is None:
             cfg = self._ctx()
-            resp = self.session.get(f"{self.api_base}/documents/{cfg.root_id}")
-            resp.raise_for_status()
+            resp = self._get_with_backoff_retry(f"{self.api_base}/documents/{cfg.root_id}")
             self._root = resp.json()
             if self._root.get("language") != cfg.language:
                 self.log(0, f"WARNING: root language is {self._root.get('language')!r}, "
@@ -144,11 +230,10 @@ class TriumphClient:
         if self.use_cache and cache_file.exists():
             return json.loads(cache_file.read_text())
 
-        time.sleep(REQUEST_DELAY)
         url = (f"{self.api_base}/documents/{cfg.root_id}/{topic_id}"
                f"?{urlencode(cfg.product_context)}")
-        resp = self.session.get(url)
-        resp.raise_for_status()
+        resp = self._get_with_backoff_retry(url)
+
         data = resp.json()
         cache_file.write_text(json.dumps(data))
         return data
@@ -164,9 +249,9 @@ class TriumphClient:
             return data
 
         cfg = self._ctx()
-        time.sleep(REQUEST_DELAY)
-        resp = self.session.get(f"{self.api_base}/documents/{cfg.root_id}/images/{href}")
-        resp.raise_for_status()
+        url = f"{self.api_base}/documents/{cfg.root_id}/images/{href}"
+        resp = self._get_with_backoff_retry(url)
+
         data = resp.content
         cache_file.write_bytes(data)
         self._image_mem[href] = data
